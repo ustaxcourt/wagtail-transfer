@@ -3,7 +3,7 @@ from functools import partial
 from django.core.exceptions import ValidationError
 from wagtail.blocks import (Block, ChooserBlock, ListBlock, RichTextBlock,
                             StreamBlock, StructBlock)
-from wagtail.contrib.typed_table_block.blocks import TypedTableBlock
+
 from .models import get_base_model
 from .richtext import get_reference_handler
 
@@ -79,57 +79,6 @@ class BaseBlockHandler:
             raise ValidationError('This block requires a value')
         return value
 
-class TypedTableBlockHandler(BaseBlockHandler):
-    def get_object_references(self, value):
-        return super().get_object_references(value)
-
-    def update_ids(self, value, destination_ids_by_source):
-        return super().update_ids(value, destination_ids_by_source)
-    
-    def map_over_json(self, stream, func):
-        updated_stream = {}
-        for key in stream:
-            if key not in ('columns', 'rows'):
-                new_block = self.block.child_blocks.get(key)
-                if not new_block:
-                    # If the block type is not recognised, skip it
-                    continue
-                new_block_handler = get_block_handler(new_block)
-                new_stream = stream[key]
-                try:
-                    new_value = new_block_handler.map_over_json(new_stream, func)
-                except ValidationError:
-                    if new_block.required:
-                        raise ValidationError('This block requires a value for {}'.format(new_block))
-                    else:
-                        # If the new block isn't required, just set it to the empty value
-                        new_value = new_block_handler.empty_value
-                updated_stream[key] = new_value
-        
-        updated_stream['columns'] = stream['columns']
-
-        rows_updated_stream = []
-        for row in stream['rows']:
-            values_updated_stream = []
-            for index, col in enumerate(stream['columns']):
-                new_block = self.block.child_blocks.get(col['type'])
-                if not new_block:
-                    #If the block type is not recognized, skip it
-                    continue
-                new_block_handler = get_block_handler(new_block)
-
-                element = row['values'][index]
-                new_stream = element
-                try:
-                    new_value = new_block_handler.map_over_json(new_stream, func)
-                except ValidationError:
-                    pass
-
-                values_updated_stream.append(new_value)
-            rows_updated_stream.append({'values': values_updated_stream})
-        updated_stream['rows'] = rows_updated_stream
-
-        return updated_stream
 
 class ListBlockHandler(BaseBlockHandler):
     def map_over_json(self, stream, func):
@@ -247,5 +196,4 @@ HANDLERS_BY_BLOCK_CLASS = {
     ListBlock: ListBlockHandler,
     StreamBlock: StreamBlockHandler,
     StructBlock: StructBlockHandler,
-    TypedTableBlock: TypedTableBlockHandler,
 }
