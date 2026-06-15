@@ -116,8 +116,8 @@ class FieldLocator:
 
     def get_uid_for_local_id(self, id, **kwargs):
         # For field-based lookups, the UID is a tuple of field values
-        print(f"get_uid_for_local_id - Values List for {self.model}: {self.model.objects.values_list(*self.fields)}")
-        print(f"get_uid_for_local_id - id: {id}")
+        logger.info(f"get_uid_for_local_id - Values List for {self.model}: {self.model.objects.values_list(*self.fields)}")
+        logger.info(f"get_uid_for_local_id - id: {id}")
         return self.model.objects.values_list(*self.fields).get(pk=id)
 
     def attach_uid(self, instance, uid):
