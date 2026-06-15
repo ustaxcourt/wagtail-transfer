@@ -22,7 +22,7 @@ UUID_SEQUENCE = 0
 # dict of models that should be located by field values using FieldLocator,
 # rather than by UUID mapping
 LOOKUP_FIELDS = {
-    'taggit.tag': ['slug'],  # sensible default for taggit; can still be overridden 
+    # 'taggit.tag': ['slug'],  # sensible default for taggit; can still be overridden 
     'wagtailcore.locale': ["language_code"],
     'contenttypes.contenttype': ['app_label', 'model'],
 }
