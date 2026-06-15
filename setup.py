@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='wagtail-transfer',
-    version='0.11.post2.dev2',
+    version='0.11.post2.dev3',
     description="Content transfer for Wagtail",
     author='Matthew Westcott',
     author_email='matthew.westcott@torchbox.com',
