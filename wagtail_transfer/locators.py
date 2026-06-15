@@ -22,7 +22,7 @@ UUID_SEQUENCE = 0
 # dict of models that should be located by field values using FieldLocator,
 # rather than by UUID mapping
 LOOKUP_FIELDS = {
-    # 'taggit.tag': ['slug'],  # sensible default for taggit; can still be overridden 
+    'taggit.tag': ['slug'],  # sensible default for taggit; can still be overridden 
     'wagtailcore.locale': ["language_code"],
     'contenttypes.contenttype': ['app_label', 'model'],
 }
@@ -116,6 +116,8 @@ class FieldLocator:
 
     def get_uid_for_local_id(self, id, **kwargs):
         # For field-based lookups, the UID is a tuple of field values
+        print(f"get_uid_for_local_id - Values List for {self.model}: {self.model.objects.values_list(*self.fields)}")
+        print(f"get_uid_for_local_id - id: {id}")
         return self.model.objects.values_list(*self.fields).get(pk=id)
 
     def attach_uid(self, instance, uid):
