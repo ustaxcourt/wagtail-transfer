@@ -1,4 +1,5 @@
 import json
+import inspect
 from collections import defaultdict
 
 import requests
@@ -146,10 +147,11 @@ def objects_for_export(request):
 
     mappings = []
     for model, pk in object_references:
-        uid = get_locator_for_model(model).get_uid_for_local_id(pk)
-        mappings.append(
-            [model._meta.label_lower, pk, uid]
-        )
+        if inspect.isclass(model):
+            uid = get_locator_for_model(model).get_uid_for_local_id(pk)
+            mappings.append(
+                [model._meta.label_lower, pk, uid]
+            )
 
     return JsonResponse({
         'ids_for_import': [],
