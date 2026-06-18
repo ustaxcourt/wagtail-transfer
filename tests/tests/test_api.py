@@ -300,6 +300,24 @@ class TestPagesApi(TestCase):
             for model, pk, uid in data['mappings']
         ))
 
+    def test_rich_text_with_tagged_image_embed(self):
+        """Regression: pages embedding a tagged image should export without crashing (WAG-1224)."""
+        with open(os.path.join(FIXTURES_DIR, 'wagtail.jpg'), 'rb') as f:
+            image = Image.objects.create(title="Wagtail", file=ImageFile(f, name='wagtail.jpg'))
+        image.tags.add('nature')
+
+        body = '<p>Here is an image</p><embed embedtype="image" id="%d" alt="A wagtail" format="left" />' % image.pk
+        page = PageWithRichText(title="Tagged image page", body=body)
+        Page.objects.get(url_path='/home/existing-child-page/').add_child(instance=page)
+
+        response = self.get(page.id)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(any(
+            model == 'wagtailimages.image' and pk == image.pk
+            for model, pk, uid in data['mappings']
+        ))
+
     def test_rich_text_field_with_unhandled_link_type(self):
         """
         Rich text fields with custom link handlers are handled gracefully.
@@ -724,6 +742,46 @@ class TestObjectsApi(TestCase):
         self.assertEqual(obj['fields']['image']['download_url'], 'http://media.example.com/media/avatars/wagtail.jpg')
         self.assertEqual(obj['fields']['image']['size'], 1160)
         self.assertEqual(obj['fields']['image']['hash'], '45c5db99aea04378498883b008ee07528f5ae416')
+
+    def test_image_with_tag(self):
+        """Regression: exporting a tagged image via the objects endpoint should not crash (WAG-1224)."""
+        with open(os.path.join(FIXTURES_DIR, 'wagtail.jpg'), 'rb') as f:
+            image = Image.objects.create(title="Wagtail", file=ImageFile(f, name='wagtail.jpg'))
+        image.tags.add('nature')
+
+        response = self.get({'wagtailimages.image': [image.pk]})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data['objects']), 1)
+        self.assertEqual(data['objects'][0]['fields']['title'], 'Wagtail')
+
+    def test_tagged_item_export(self):
+        """Regression: exporting a TaggedItem (GFK back to Image) should not crash (WAG-1224).
+
+        GenericForeignKeyAdapter.get_object_references returns (get_base_model(linked_instance), pk)
+        where linked_instance is an Image instance. get_base_model returns the instance unchanged
+        when the model has no concrete MTI parents, so a non-class ends up in object_references.
+        Without the inspect.isclass() guard, FieldLocator.get_uid_for_local_id then calls
+        instance.objects.values_list(...), raising AttributeError.
+        """
+        from taggit.models import TaggedItem
+        from wagtail_transfer import locators
+
+        with open(os.path.join(FIXTURES_DIR, 'wagtail.jpg'), 'rb') as f:
+            image = Image.objects.create(title="Wagtail", file=ImageFile(f, name='wagtail.jpg'))
+        image.tags.add('nature')
+
+        tagged_item = TaggedItem.objects.filter(object_id=str(image.pk)).first()
+        self.assertIsNotNone(tagged_item)
+
+        # Patch LOOKUP_FIELDS to include Image so FieldLocator is used for the image reference.
+        # Without the inspect.isclass() guard, FieldLocator receives an instance and crashes
+        # with AttributeError: Manager isn't accessible via 'Image' instances.
+        with mock.patch.dict(locators.LOOKUP_FIELDS, {'wagtailimages.image': ['title']}):
+            response = self.get({'taggit.taggeditem': [tagged_item.pk]})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data['objects']), 1)
 
 
 @mock.patch('requests.get')
