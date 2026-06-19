@@ -157,7 +157,7 @@ class GenericForeignKeyAdapter(FieldAdapter):
     def get_object_references(self, instance):
         linked_instance = getattr(instance, self.field.name, None)
         if linked_instance:
-            return {(get_base_model(linked_instance), linked_instance.pk)}
+            return {(get_base_model(type(linked_instance)), linked_instance.pk)}
         return set()
 
     def get_dependencies(self, value):

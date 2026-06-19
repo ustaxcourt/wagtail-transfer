@@ -1,3 +1,4 @@
+import inspect
 import json
 import os.path
 import shutil
@@ -754,15 +755,19 @@ class TestObjectsApi(TestCase):
         data = response.json()
         self.assertEqual(len(data['objects']), 1)
         self.assertEqual(data['objects'][0]['fields']['title'], 'Wagtail')
+        # The tagged item should appear in mappings because tagged_items is a FOLLOWED_REVERSE_RELATION
+        self.assertTrue(
+            any(model == 'taggit.taggeditem' for model, pk, uid in data['mappings']),
+            "TaggedItem should appear in mappings when exporting a tagged image",
+        )
 
     def test_tagged_item_export(self):
         """Regression: exporting a TaggedItem (GFK back to Image) should not crash (WAG-1224).
 
-        GenericForeignKeyAdapter.get_object_references returns (get_base_model(linked_instance), pk)
-        where linked_instance is an Image instance. get_base_model returns the instance unchanged
-        when the model has no concrete MTI parents, so a non-class ends up in object_references.
-        Without the inspect.isclass() guard, FieldLocator.get_uid_for_local_id then calls
-        instance.objects.values_list(...), raising AttributeError.
+        GenericForeignKeyAdapter.get_object_references was passing a model instance to
+        get_base_model instead of the class, causing a non-class to end up in object_references.
+        The view's inspect.isclass() guard prevented a crash but silently dropped the reference.
+        The fix is in the adapter (use type(linked_instance)); the guard is now defense-in-depth.
         """
         from taggit.models import TaggedItem
         from wagtail_transfer import locators
@@ -774,14 +779,90 @@ class TestObjectsApi(TestCase):
         tagged_item = TaggedItem.objects.filter(object_id=str(image.pk)).first()
         self.assertIsNotNone(tagged_item)
 
-        # Patch LOOKUP_FIELDS to include Image so FieldLocator is used for the image reference.
-        # Without the inspect.isclass() guard, FieldLocator receives an instance and crashes
-        # with AttributeError: Manager isn't accessible via 'Image' instances.
+        # Patch LOOKUP_FIELDS to force FieldLocator for Image, which is where the original
+        # crash manifested (Manager isn't accessible via instances).
         with mock.patch.dict(locators.LOOKUP_FIELDS, {'wagtailimages.image': ['title']}):
             response = self.get({'taggit.taggeditem': [tagged_item.pk]})
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data['objects']), 1)
+        # The image the TaggedItem points to via GFK should appear in mappings — previously
+        # the non-class bug caused this reference to be silently dropped.
+        self.assertTrue(
+            any(model == 'wagtailimages.image' and pk == image.pk for model, pk, uid in data['mappings']),
+            "Image referenced by TaggedItem's GFK should appear in mappings",
+        )
+
+
+class TestGenericForeignKeyAdapter(TestCase):
+    def test_get_object_references_returns_classes_not_instances(self):
+        """get_object_references must yield (model_class, pk) tuples, not (instance, pk).
+
+        When the GFK points to a model with no concrete MTI parents, get_base_model returns
+        its argument unchanged. Passing an instance instead of a class means a non-class
+        ends up as the model key, causing FieldLocator (and other consumers) to crash.
+        """
+        from django.contrib.contenttypes.fields import GenericForeignKey
+        from taggit.models import TaggedItem
+        from wagtail_transfer.field_adapters import GenericForeignKeyAdapter
+
+        with open(os.path.join(FIXTURES_DIR, 'wagtail.jpg'), 'rb') as f:
+            image = Image.objects.create(title="Wagtail", file=ImageFile(f, name='wagtail.jpg'))
+        image.tags.add('nature')
+
+        tagged_item = TaggedItem.objects.filter(object_id=str(image.pk)).first()
+        self.assertIsNotNone(tagged_item)
+
+        gfk_field = next(
+            f for f in TaggedItem._meta.get_fields() if isinstance(f, GenericForeignKey)
+        )
+        adapter = GenericForeignKeyAdapter(gfk_field)
+        refs = adapter.get_object_references(tagged_item)
+
+        self.assertTrue(len(refs) > 0, "Expected at least one object reference from TaggedItem GFK")
+        for model_or_instance, pk in refs:
+            self.assertTrue(
+                inspect.isclass(model_or_instance),
+                f"get_object_references returned a non-class model key: {model_or_instance!r}",
+            )
+
+    def test_get_object_references_returns_base_model_class(self):
+        """The model class in returned references should be the base model, not a subclass."""
+        from django.contrib.contenttypes.fields import GenericForeignKey
+        from taggit.models import TaggedItem
+        from wagtail_transfer.field_adapters import GenericForeignKeyAdapter
+        from wagtail_transfer.models import get_base_model
+
+        with open(os.path.join(FIXTURES_DIR, 'wagtail.jpg'), 'rb') as f:
+            image = Image.objects.create(title="Wagtail", file=ImageFile(f, name='wagtail.jpg'))
+        image.tags.add('nature')
+
+        tagged_item = TaggedItem.objects.filter(object_id=str(image.pk)).first()
+        gfk_field = next(
+            f for f in TaggedItem._meta.get_fields() if isinstance(f, GenericForeignKey)
+        )
+        adapter = GenericForeignKeyAdapter(gfk_field)
+        refs = adapter.get_object_references(tagged_item)
+
+        for model_cls, pk in refs:
+            self.assertEqual(
+                model_cls,
+                get_base_model(model_cls),
+                f"Returned model {model_cls} is not the base model",
+            )
+
+    def test_get_object_references_empty_when_no_linked_object(self):
+        from django.contrib.contenttypes.fields import GenericForeignKey
+        from taggit.models import TaggedItem
+        from wagtail_transfer.field_adapters import GenericForeignKeyAdapter
+
+        # TaggedItem with no content_object set
+        tagged_item = TaggedItem()
+        gfk_field = next(
+            f for f in TaggedItem._meta.get_fields() if isinstance(f, GenericForeignKey)
+        )
+        adapter = GenericForeignKeyAdapter(gfk_field)
+        self.assertEqual(adapter.get_object_references(tagged_item), set())
 
 
 @mock.patch('requests.get')
