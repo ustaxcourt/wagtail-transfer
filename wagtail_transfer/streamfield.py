@@ -171,7 +171,7 @@ class StreamBlockHandler(BaseBlockHandler):
             new_stream = element['value']
             try:
                 new_value = new_block_handler.map_over_json(new_stream, func)
-                updated_stream.append({'type': element['type'], 'value': new_value, 'id': element['id']})
+                updated_stream.append({'type': element['type'], 'value': new_value, 'id': element['id'] if "id" in element else None})
             except ValidationError:
                 # Omit the block if a required field was left blank due to the import
                 pass
