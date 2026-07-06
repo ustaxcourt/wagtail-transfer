@@ -265,7 +265,11 @@ def import_page(request):
         params={'digest': digest}
     )
 
-    dest_page_id = request.POST['dest_page_id'] or None
+    dest_page_id = None
+    if request.POST['source_page_id'] == request.POST['dest_page_id']:
+        dest_page_id = 1
+    else:
+        dest_page_id = request.POST['dest_page_id'] or None
     importer = ImportPlanner.for_page(source=request.POST['source_page_id'], destination=dest_page_id, source_site=source)
     importer.add_json(response.content)
     importer = import_missing_object_data(source, importer)
