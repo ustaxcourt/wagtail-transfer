@@ -412,7 +412,7 @@ class ImportPlanner:
         if operation is not None:
             self.operations.add(operation)
 
-        if action == 'create':
+        if action == 'create' or (action == 'update' and source_id == self.root_page_source_pk and model is Page):
             # For 'create' actions, record this operation in `resolutions`, so that any operations
             # that identify this object as a dependency know that this operation has to happen
             # first.
@@ -421,10 +421,17 @@ class ImportPlanner:
             # been able to populate destination_ids_by_source with no further action, and so the
             # dependent operation has nothing to wait for.)
 
-            # For 'update' actions, this doesn't matter, since we can happily fill in the
+            # For 'update' actions, this doesn't matter unless the model is a Page, since we can happily fill in the
             # destination ID wherever it's being referenced, regardless of whether that object has
             # completed its update or not; in this case, we would have already set the resolution
             # to None during _handle_objective.
+
+            # When attempting to import a Page and its children pages, Wagtail attempts to create a value for the
+            # page's path property based on the page's parent's path and the number of children pages that the
+            # parent page currently has. The number of children pages a parent page has, according to the function
+            # used to generate the path value, is reset to zero when the parent page is updated. As a result, the
+            # 'update' action for the parent page should be added to the set of resolutions so the 'update' action
+            # is performed before any children pages are created or updated.
             self.resolutions[(model, source_id)] = operation
 
         self.task_resolutions[task] = operation
