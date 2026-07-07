@@ -591,7 +591,11 @@ class ImportPlanner:
                     # recursively add the operation that we're depending on here
                     self._add_to_operation_order(resolution, operation_order, path + [resolution])
                 except CircularDependencyException:
-                    if dep_is_hard:
+                    # A dependency is hard if the dependent model must exist prior to this operation
+                    # commencing. In the situation where a parent page must be updated prior to the
+                    # operation commencing, the parent page already exists so the dependency has
+                    # been met and the circular dependency is therefore resolved.
+                    if dep_is_hard and not isinstance(resolution, UpdateModel):
                         # we can't resolve the circular dependency by breaking the chain here,
                         # so propagate it to the next level up
                         raise
