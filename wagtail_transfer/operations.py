@@ -412,7 +412,7 @@ class ImportPlanner:
         if operation is not None:
             self.operations.add(operation)
 
-        if action == 'create' or (action == 'update' and source_id == self.root_page_source_pk and model is Page):
+        if action == 'create' or (action == 'update' and model is Page and hasattr(self, "root_page_source_pk") and source_id == self.root_page_source_pk):
             # For 'create' actions, record this operation in `resolutions`, so that any operations
             # that identify this object as a dependency know that this operation has to happen
             # first.
