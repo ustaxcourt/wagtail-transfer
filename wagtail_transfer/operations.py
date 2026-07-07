@@ -489,7 +489,7 @@ class ImportPlanner:
             # they will capture outdated versions of child objects in the revision
             for operation in operation_order:
                 if isinstance(operation.instance, Page):
-                    operation.instance.save_revision()
+                    operation.instance.save_revision(changed=False)
 
 
     def _check_satisfiable(self, operation, statuses):
