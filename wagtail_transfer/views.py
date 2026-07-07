@@ -265,11 +265,15 @@ def import_page(request):
         params={'digest': digest}
     )
 
-    dest_page_id = None
-    if request.POST['source_page_id'] == request.POST['dest_page_id']:
-        dest_page_id = 1
+    dest_page_id_raw = request.POST.get('dest_page_id')
+    if dest_page_id_raw in (None, '', 'null'):
+        dest_page_id = None
     else:
-        dest_page_id = request.POST['dest_page_id'] or None
+        dest_page_id_int = int(dest_page_id_raw)
+        if int(request.POST['source_page_id']) == dest_page_id_int:
+            dest_page_id = Page.get_first_root_node().pk
+        else:
+            dest_page_id = dest_page_id_int
     importer = ImportPlanner.for_page(source=request.POST['source_page_id'], destination=dest_page_id, source_site=source)
     importer.add_json(response.content)
     importer = import_missing_object_data(source, importer)
