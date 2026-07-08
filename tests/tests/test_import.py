@@ -239,6 +239,112 @@ class TestImport(TestCase):
         self.assertEqual(created_page.advert.run_until, datetime(2020, 12, 23, 1, 23, 45, tzinfo=timezone.utc))
         self.assertEqual(created_page.advert.run_from, None)
 
+    def test_import_pages_with_new_children_under_non_root_existing_page(self):
+        """Regression: new sibling pages created under an *already-existing, non-root*
+        page of the imported subtree should not collide on path/numchild (WAG-1294 follow-up).
+
+        The importer must treat every existing Page that receives an 'update' task as a
+        resolution (so anything depending on it waits for the update to run), not just the
+        literal root_page_source_pk of the transfer. Otherwise, an UpdateModel operation for
+        an existing page may run *after* new children have already been added beneath it,
+        overwriting the destination's numchild with the stale value captured at plan time and
+        causing subsequently-created children to be assigned already-taken paths.
+        """
+        data = """{
+            "ids_for_import": [
+                ["wagtailcore.page", 12],
+                ["wagtailcore.page", 15],
+                ["wagtailcore.page", 20],
+                ["wagtailcore.page", 21]
+            ],
+            "mappings": [
+                ["wagtailcore.page", 12, "22222222-2222-2222-2222-222222222222"],
+                ["wagtailcore.page", 15, "33333333-3333-3333-3333-333333333333"],
+                ["wagtailcore.page", 20, "20202020-2020-2020-2020-202020202020"],
+                ["wagtailcore.page", 21, "21212121-2121-2121-2121-212121212121"]
+            ],
+            "objects": [
+                {
+                    "model": "tests.simplepage",
+                    "pk": 12,
+                    "parent_id": 1,
+                    "fields": {
+                        "title": "Home",
+                        "show_in_menus": false,
+                        "live": true,
+                        "slug": "home",
+                        "intro": "This is the updated homepage",
+                        "wagtail_admin_comments": []
+                    }
+                },
+                {
+                    "model": "tests.simplepage",
+                    "pk": 15,
+                    "parent_id": 12,
+                    "fields": {
+                        "title": "Existing child page, updated",
+                        "show_in_menus": false,
+                        "live": true,
+                        "slug": "existing-child-page",
+                        "intro": "This page already existed at the destination",
+                        "wagtail_admin_comments": []
+                    }
+                },
+                {
+                    "model": "tests.simplepage",
+                    "pk": 20,
+                    "parent_id": 15,
+                    "fields": {
+                        "title": "New Child A",
+                        "show_in_menus": false,
+                        "live": true,
+                        "slug": "new-child-a",
+                        "intro": "First new child of the existing page",
+                        "wagtail_admin_comments": []
+                    }
+                },
+                {
+                    "model": "tests.simplepage",
+                    "pk": 21,
+                    "parent_id": 15,
+                    "fields": {
+                        "title": "New Child B",
+                        "show_in_menus": false,
+                        "live": true,
+                        "slug": "new-child-b",
+                        "intro": "Second new child of the existing page",
+                        "wagtail_admin_comments": []
+                    }
+                }
+            ]
+        }"""
+
+        # The literal root of this transfer is Home (12 -> local page 2); page 15 (-> local
+        # page 3, "Existing child page") is a non-root page within the subtree that already
+        # exists at the destination and is gaining new children in the same import.
+        importer = ImportPlanner(root_page_source_pk=12, destination_parent_id=None, source_site="staging")
+        importer.add_json(data)
+
+        # The fix must record an UpdateModel resolution for *any* existing Page being updated,
+        # not just the transfer's root page, so that new children depend on it having run first.
+        existing_page = Page.objects.get(url_path='/home/existing-child-page/')
+        resolution = importer.resolutions.get((Page, 15))
+        self.assertIsNotNone(
+            resolution,
+            "existing non-root page's update should be tracked as a resolution so new "
+            "children wait for it, avoiding a stale numchild being written back after they're created"
+        )
+
+        importer.run()
+
+        existing_page.refresh_from_db()
+        self.assertEqual(existing_page.numchild, 2)
+
+        child_a = SimplePage.objects.get(url_path='/home/existing-child-page/new-child-a/')
+        child_b = SimplePage.objects.get(url_path='/home/existing-child-page/new-child-b/')
+        self.assertNotEqual(child_a.path, child_b.path)
+        self.assertEqual(set(existing_page.get_children().values_list('pk', flat=True)), {child_a.pk, child_b.pk})
+
     def test_import_pages_with_orphaned_uid(self):
         # the author UID listed here exists in the destination's IDMapping table, but
         # the Author record is missing; this would correspond to an author that was previously

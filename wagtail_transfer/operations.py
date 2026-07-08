@@ -412,7 +412,7 @@ class ImportPlanner:
         if operation is not None:
             self.operations.add(operation)
 
-        if action == 'create' or (action == 'update' and model is Page and hasattr(self, "root_page_source_pk") and source_id == self.root_page_source_pk):
+        if action == 'create' or (action == 'update' and model is Page):
             # For 'create' actions, record this operation in `resolutions`, so that any operations
             # that identify this object as a dependency know that this operation has to happen
             # first.
@@ -430,8 +430,12 @@ class ImportPlanner:
             # page's path property based on the page's parent's path and the number of children pages that the
             # parent page currently has. The number of children pages a parent page has, according to the function
             # used to generate the path value, is reset to zero when the parent page is updated. As a result, the
-            # 'update' action for the parent page should be added to the set of resolutions so the 'update' action
-            # is performed before any children pages are created or updated.
+            # 'update' action for *any* existing Page - not just the literal root of the current
+            # transfer - should be added to the set of resolutions so the update is performed before
+            # any of that page's children are created or updated. Without this, an update task for
+            # a non-root page in the imported subtree could run after new children were already
+            # added beneath it, clobbering the destination's numchild bookkeeping with the stale
+            # value captured when the update operation was planned.
             self.resolutions[(model, source_id)] = operation
 
         self.task_resolutions[task] = operation
