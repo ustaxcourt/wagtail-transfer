@@ -41,6 +41,7 @@ def pages_for_export(request, root_page_id):
 
     models_to_serialize = set(pages)
     serialized_models = set()
+    parent_is_site_root = (Page.get_first_root_node().pk == root_page.get_parent().pk)
 
     while models_to_serialize:
         model = models_to_serialize.pop()
@@ -60,6 +61,7 @@ def pages_for_export(request, root_page_id):
         'ids_for_import': ids_for_import,
         'mappings': mappings,
         'objects': objects,
+        'requested_page_parent_is_site_root': parent_is_site_root,
     }, json_dumps_params={'indent': 2})
 
 
@@ -265,12 +267,14 @@ def import_page(request):
         params={'digest': digest}
     )
 
+    data = json.loads(response.content)
+
     dest_page_id_raw = request.POST.get('dest_page_id')
     if dest_page_id_raw in (None, '', 'null'):
         dest_page_id = None
     else:
         dest_page_id_int = int(dest_page_id_raw)
-        if int(request.POST['source_page_id']) == dest_page_id_int:
+        if data['requested_page_parent_is_site_root']:
             dest_page_id = Page.get_first_root_node().pk
         else:
             dest_page_id = dest_page_id_int
