@@ -93,7 +93,7 @@ class TestImportView(TestCase):
                     }
                 }
             ],
-            "requested_page_parent_is_site_root": "false"
+            "requested_page_parent_is_site_root": false
         }"""
 
         post.return_value.status_code = 200
@@ -124,7 +124,7 @@ class TestImportView(TestCase):
                     }
                 }
             ],
-            "requested_page_parent_is_site_root": "false"
+            "requested_page_parent_is_site_root": false
         }"""
 
         response = self.client.post('/admin/wagtail-transfer/import/', {
@@ -226,7 +226,7 @@ class TestImportView(TestCase):
                     }
                 }
             ],
-            "requested_page_parent_is_site_root": "false"
+            "requested_page_parent_is_site_root": false
         }"""
 
         post.return_value.status_code = 200

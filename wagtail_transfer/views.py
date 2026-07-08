@@ -274,7 +274,7 @@ def import_page(request):
         dest_page_id = None
     else:
         dest_page_id_int = int(dest_page_id_raw)
-        if str.lower(data['requested_page_parent_is_site_root']) == "true":
+        if data['requested_page_parent_is_site_root']:
             dest_page_id = Page.get_first_root_node().pk
         else:
             dest_page_id = dest_page_id_int
