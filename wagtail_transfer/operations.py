@@ -412,7 +412,7 @@ class ImportPlanner:
         if operation is not None:
             self.operations.add(operation)
 
-        if action == 'create':
+        if action == 'create' or (action == 'update' and model is Page):
             # For 'create' actions, record this operation in `resolutions`, so that any operations
             # that identify this object as a dependency know that this operation has to happen
             # first.
@@ -421,10 +421,21 @@ class ImportPlanner:
             # been able to populate destination_ids_by_source with no further action, and so the
             # dependent operation has nothing to wait for.)
 
-            # For 'update' actions, this doesn't matter, since we can happily fill in the
+            # For 'update' actions, this doesn't matter unless the model is a Page, since we can happily fill in the
             # destination ID wherever it's being referenced, regardless of whether that object has
             # completed its update or not; in this case, we would have already set the resolution
             # to None during _handle_objective.
+
+            # When attempting to import a Page and its children pages, Wagtail attempts to create a value for the
+            # page's path property based on the page's parent's path and the number of children pages that the
+            # parent page currently has. The number of children pages a parent page has, according to the function
+            # used to generate the path value, is reset to zero when the parent page is updated. As a result, the
+            # 'update' action for *any* existing Page - not just the literal root of the current
+            # transfer - should be added to the set of resolutions so the update is performed before
+            # any of that page's children are created or updated. Without this, an update task for
+            # a non-root page in the imported subtree could run after new children were already
+            # added beneath it, clobbering the destination's numchild bookkeeping with the stale
+            # value captured when the update operation was planned.
             self.resolutions[(model, source_id)] = operation
 
         self.task_resolutions[task] = operation
@@ -482,7 +493,7 @@ class ImportPlanner:
             # they will capture outdated versions of child objects in the revision
             for operation in operation_order:
                 if isinstance(operation.instance, Page):
-                    operation.instance.save_revision()
+                    operation.instance.save_revision(changed=False)
 
 
     def _check_satisfiable(self, operation, statuses):
@@ -584,7 +595,11 @@ class ImportPlanner:
                     # recursively add the operation that we're depending on here
                     self._add_to_operation_order(resolution, operation_order, path + [resolution])
                 except CircularDependencyException:
-                    if dep_is_hard:
+                    # A dependency is hard if the dependent model must exist prior to this operation
+                    # commencing. In the situation where a parent page must be updated prior to the
+                    # operation commencing, the parent page already exists so the dependency has
+                    # been met and the circular dependency is therefore resolved.
+                    if dep_is_hard and not isinstance(resolution, UpdateModel):
                         # we can't resolve the circular dependency by breaking the chain here,
                         # so propagate it to the next level up
                         raise
