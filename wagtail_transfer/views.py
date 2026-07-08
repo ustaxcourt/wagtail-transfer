@@ -41,7 +41,7 @@ def pages_for_export(request, root_page_id):
 
     models_to_serialize = set(pages)
     serialized_models = set()
-    parent_is_site_root = (Page.get_first_root_node().pk == root_page.get_parent().pk)
+    parent_is_site_root = (root_page.get_parent() != None and Page.get_first_root_node().pk == root_page.get_parent().pk)
 
     while models_to_serialize:
         model = models_to_serialize.pop()
@@ -274,7 +274,7 @@ def import_page(request):
         dest_page_id = None
     else:
         dest_page_id_int = int(dest_page_id_raw)
-        if data['requested_page_parent_is_site_root']:
+        if str.lower(data['requested_page_parent_is_site_root']) == "true":
             dest_page_id = Page.get_first_root_node().pk
         else:
             dest_page_id = dest_page_id_int
