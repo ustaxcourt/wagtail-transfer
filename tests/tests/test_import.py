@@ -328,7 +328,7 @@ class TestImport(TestCase):
         # The fix must record an UpdateModel resolution for *any* existing Page being updated,
         # not just the transfer's root page, so that new children depend on it having run first.
         existing_page = Page.objects.get(url_path='/home/existing-child-page/')
-        resolution = importer.resolutions[(Page, 15)]
+        resolution = importer.resolutions.get((Page, 15))
         self.assertIsNotNone(
             resolution,
             "existing non-root page's update should be tracked as a resolution so new "
