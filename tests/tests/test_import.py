@@ -1946,6 +1946,104 @@ class TestImport(TestCase):
             ben_page.body == """<p>Have you met my friend <a id="%d" linktype="page">Bill</a>?</p>""" % bill_page.id
         )
 
+    def test_circular_reference_to_self_in_streamfield(self):
+        # A page with a soft (streamfield PageChooserBlock) dependency on itself is a circular
+        # dependency of the simplest possible kind - the object depends directly on itself, with
+        # no other objects involved. This used to crash the import entirely with an uncaught
+        # CircularDependencyException, because the "break the chain on a soft dependency" handling
+        # only applied to cycles discovered partway through resolving some other object's
+        # dependencies, not to an object found to depend on itself at the point it's first
+        # considered. See operations.py's _add_to_operation_order for more detail.
+        data = """{
+                "ids_for_import": [
+                    ["wagtailcore.page", 6]
+                ],
+                "mappings": [
+                    ["wagtailcore.page", 6, "0c7a9390-16cb-11ea-8000-0800278dc04d"],
+                    ["wagtailcore.page", 300, "33333333-3333-3333-3333-333333333333"]
+                ],
+                "objects": [
+                    {
+                        "model": "tests.pagewithstreamfield",
+                        "pk": 6,
+                        "fields": {
+                            "title": "Self-referencing page",
+                            "slug": "self-referencing",
+                            "live": true,
+                            "seo_title": "",
+                            "show_in_menus": false,
+                            "wagtail_admin_comments": [],
+                            "search_description": "",
+                            "body": "[{\\"type\\": \\"page\\", \\"value\\": 6, \\"id\\": \\"c6d07d3a-72d4-445e-8fa5-b34107291176\\"}]"},
+                            "parent_id": 300
+                        }
+                    ]
+                }"""
+
+        importer = ImportPlanner(root_page_source_pk=1, destination_parent_id=None, source_site="staging")
+        importer.add_json(data)
+        # this used to raise wagtail_transfer.operations.CircularDependencyException
+        importer.run()
+
+        # the page should still be created, even though its own reference to itself couldn't be
+        # resolved at creation time
+        self.assertTrue(PageWithStreamField.objects.filter(slug='self-referencing').exists())
+
+    def test_circular_reference_to_self_via_hard_dependency(self):
+        # As above, but with a hard (non-nullable FK) dependency instead of a soft one. Unlike the
+        # rich text case, a page that hard-depends on itself can never be satisfiable (there's no
+        # way to have the referenced object exist before creating it, since they're the same
+        # object), so - consistent with the existing handling of unsatisfiable hard dependencies
+        # elsewhere in this file (see test_skip_import_if_hard_dependency_on_non_imported_page) -
+        # the page should simply not be created, and the import as a whole should complete
+        # without raising.
+        data = """{
+            "ids_for_import": [
+                ["wagtailcore.page", 20],
+                ["wagtailcore.page", 24]
+            ],
+            "mappings": [
+                ["wagtailcore.page", 20, "20202020-2020-2020-2020-202020202020"],
+                ["wagtailcore.page", 24, "24242424-2424-2424-2424-242424242424"]
+            ],
+            "objects": [
+                {
+                    "model": "tests.simplepage",
+                    "pk": 20,
+                    "parent_id": 12,
+                    "fields": {
+                        "title": "hard self reference test",
+                        "show_in_menus": false,
+                        "live": true,
+                        "slug": "hard-self-reference-test",
+                        "intro": "Testing a circular hard dependency where a page redirects to itself",
+                        "wagtail_admin_comments": []
+                    }
+                },
+                {
+                    "model": "tests.redirectpage",
+                    "pk": 24,
+                    "parent_id": 20,
+                    "fields": {
+                        "title": "redirect to self",
+                        "show_in_menus": false,
+                        "live": true,
+                        "slug": "redirect-to-self",
+                        "redirect_to": 24,
+                        "wagtail_admin_comments": []
+                    }
+                }
+            ]
+        }"""
+
+        importer = ImportPlanner(root_page_source_pk=20, destination_parent_id=2, source_site="staging")
+        importer.add_json(data)
+        # this used to raise wagtail_transfer.operations.CircularDependencyException; it should
+        # instead complete, simply leaving the unsatisfiable page uncreated
+        importer.run()
+
+        self.assertFalse(RedirectPage.objects.filter(slug='redirect-to-self').exists())
+
     def test_omitting_references_in_m2m_relations(self):
         data = """{
             "ids_for_import": [

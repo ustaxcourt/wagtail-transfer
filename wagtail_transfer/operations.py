@@ -585,11 +585,27 @@ class ImportPlanner:
                 # The resolution for this dependency is an operation that's currently under
                 # consideration, so we have a circular dependency. This will be one that we can
                 # resolve by breaking a soft dependency - a circular dependency consisting of
-                # only hard dependencies would have been caught by _check_satisfiable. So, raise
-                # an exception to be propagated back up the chain until we're back to a caller that
-                # can handle it gracefully - namely, a soft dependency that can be left
-                # unsatisfied.
-                raise CircularDependencyException()
+                # only hard dependencies would have been caught by _check_satisfiable.
+                #
+                # The most direct case of this is `resolution is operation` - i.e. path == [operation]
+                # and this object depends on itself (for example, a page with a rich text link to
+                # itself, or a chooser block pointing back at its own page). Unlike a cycle detected
+                # several levels down, there is no enclosing caller here whose `except
+                # CircularDependencyException` handler (below) can decide whether to break the chain -
+                # this is the top-level call from `run()`, which does not catch this exception. So we
+                # have to make the same hard/soft decision made in that handler here, at the point the
+                # cycle is detected, rather than relying solely on unwinding to resolve it.
+                if dep_is_hard and not isinstance(resolution, UpdateModel):
+                    # We can't resolve the circular dependency by breaking the chain here, so raise
+                    # an exception to be propagated back up the chain until we're back to a caller
+                    # that can handle it gracefully - namely, a soft dependency that can be left
+                    # unsatisfied.
+                    raise CircularDependencyException()
+                else:
+                    # This is a soft dependency (or a hard one already satisfied by an existing
+                    # object we're updating), so we can break the chain by leaving it unsatisfied.
+                    # Abandon this dependency and move on to the next one.
+                    continue
             else:
                 try:
                     # recursively add the operation that we're depending on here
